@@ -39,6 +39,9 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- LZ-String for Compression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+
     <!-- React & ReactDOM (Production UMD Builds) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -106,6 +109,7 @@
             Smile: () => <i className="fas fa-face-smile"></i>,
             Feather: () => <i className="fas fa-feather-alt"></i>,
             Chart: () => <i className="fas fa-chart-bar"></i>,
+            Share: () => <i className="fas fa-share-nodes"></i>,
         };
 
         // --- Sub-Components ---
@@ -147,7 +151,7 @@
             );
         };
 
-        const Dashboard = ({ decks, onCreateDeck, onEditDeck, onStudyDeck, onDeleteDeck }) => (
+        const Dashboard = ({ decks, onCreateDeck, onEditDeck, onStudyDeck, onDeleteDeck, onShareDeck }) => (
             <div className="max-w-5xl mx-auto px-4 py-8">
                 <div className="flex justify-between items-center mb-8">
                     <h2 className="text-2xl font-bold text-gray-800">My Library</h2>
@@ -172,6 +176,7 @@
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex gap-1">
+                                        <button onClick={() => onShareDeck(deck)} className="text-gray-400 hover:text-falcon-600 p-2 rounded-lg hover:bg-falcon-50 transition" title="Share"><Icons.Share /></button>
                                         <button onClick={() => onEditDeck(deck.id)} className="text-gray-400 hover:text-falcon-600 p-2 rounded-lg hover:bg-falcon-50 transition"><Icons.Edit /></button>
                                         <button onClick={() => onDeleteDeck(deck.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition"><Icons.Trash /></button>
                                     </div>
@@ -718,6 +723,35 @@
                         ]
                     }]);
                 }
+
+                // Check for share link
+                const params = new URLSearchParams(window.location.search);
+                const shareData = params.get('share');
+                if (shareData) {
+                    try {
+                        const decompressed = LZString.decompressFromEncodedURIComponent(shareData);
+                        if (decompressed) {
+                            const importedDeck = JSON.parse(decompressed);
+                            if (importedDeck && importedDeck.title && Array.isArray(importedDeck.cards)) {
+                                const newDeck = { ...importedDeck, id: generateId() };
+                                setDecks(prev => {
+                                    const exists = prev.some(d => d.title === newDeck.title && d.cards.length === newDeck.cards.length); // Weak dupe check
+                                    if (exists) return prev;
+                                    return [...prev, newDeck];
+                                });
+                                // Clean URL
+                                window.history.replaceState({}, document.title, window.location.pathname);
+                                alert(`Imported "${newDeck.title}" successfully!`);
+                                // Optional: switch to setup view for the new deck
+                                setActiveDeckId(newDeck.id);
+                                setView('setup');
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Import failed", e);
+                        alert("Failed to import deck. The link might be broken.");
+                    }
+                }
             }, []);
 
             useEffect(() => {
@@ -731,6 +765,19 @@
 
             const handleDelete = (id) => {
                 if (confirm("Delete this collection forever?")) setDecks(decks.filter(d => d.id !== id));
+            };
+
+            const handleShare = (deck) => {
+                try {
+                    const json = JSON.stringify(deck);
+                    const compressed = LZString.compressToEncodedURIComponent(json);
+                    const url = `${window.location.origin}${window.location.pathname}?share=${compressed}`;
+                    navigator.clipboard.writeText(url);
+                    alert("Link copied to clipboard! Share it with friends.");
+                } catch (e) {
+                    console.error("Share failed", e);
+                    alert("Could not generate share link.");
+                }
             };
 
             const handleExport = () => {
@@ -805,6 +852,7 @@
                             onEditDeck={id => { setActiveDeckId(id); setView('edit'); }}
                             onDeleteDeck={handleDelete}
                             onStudyDeck={id => { setActiveDeckId(id); setView('setup'); }}
+                            onShareDeck={handleShare}
                         />
                     )}
 
