@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flipside</title>
+    
+    <!-- Tailwind CSS (Play CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        falcon: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            900: '#0c4a6e',
+                        }
+                    },
+                    animation: {
+                        'bounce-in': 'bounceIn 0.5s ease-out',
+                    },
+                    keyframes: {
+                        bounceIn: {
+                            '0%': { transform: 'scale(0.3)', opacity: '0' },
+                            '50%': { transform: 'scale(1.05)', opacity: '1' },
+                            '70%': { transform: 'scale(0.9)' },
+                            '100%': { transform: 'scale(1)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- React & ReactDOM (Production UMD Builds) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for In-Browser JSX Transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Emoji Picker -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+
+    <!-- KaTeX for Math/Chemistry -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+    <style type="text/tailwindcss">
+        @layer base {
+            body { @apply bg-gray-50 text-gray-800 antialiased; font-family: system-ui, -apple-system, sans-serif; }
+        }
+        @layer components {
+            .card-flip { perspective: 1000px; }
+            .card-inner { @apply relative w-full h-full text-center transition-transform duration-500; transform-style: preserve-3d; }
+            .flipped .card-inner { transform: rotateY(180deg); }
+            .card-front, .card-back { @apply absolute w-full h-full flex items-center justify-center rounded-2xl shadow-xl border border-gray-100; backface-visibility: hidden; }
+            .card-back { transform: rotateY(180deg); @apply bg-falcon-50; }
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Constants & Helpers ---
+        const STORAGE_KEY = 'flipside_v1';
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        const shuffleArray = (array) => {
+            let arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        };
+
+        const Icons = {
+            Plus: () => <i className="fas fa-plus"></i>,
+            Edit: () => <i className="fas fa-pen"></i>,
+            Trash: () => <i className="fas fa-trash"></i>,
+            Play: () => <i className="fas fa-play"></i>,
+            Save: () => <i className="fas fa-save"></i>,
+            Download: () => <i className="fas fa-download"></i>,
+            Upload: () => <i className="fas fa-upload"></i>,
+            ArrowLeft: () => <i className="fas fa-arrow-left"></i>,
+            ArrowRight: () => <i className="fas fa-arrow-right"></i>,
+            Check: () => <i className="fas fa-check"></i>,
+            Times: () => <i className="fas fa-times"></i>,
+            Rotate: () => <i className="fas fa-rotate-right"></i>,
+            Brain: () => <i className="fas fa-brain"></i>,
+            Smile: () => <i className="fas fa-face-smile"></i>,
+            Feather: () => <i className="fas fa-feather-alt"></i>,
+            Chart: () => <i className="fas fa-chart-bar"></i>,
+        };
+
+        // --- Sub-Components ---
+
+        const EmojiPickerWrapper = ({ onEmojiSelect }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                const el = ref.current;
+                if (!el) return;
+                const handler = (e) => onEmojiSelect(e.detail.unicode);
+                el.addEventListener('emoji-click', handler);
+                return () => el.removeEventListener('emoji-click', handler);
+            }, [onEmojiSelect]);
+            return <emoji-picker ref={ref} class="light shadow-none" style={{width: '100%', height: '300px'}}></emoji-picker>;
+        };
+
+        const Header = ({ goHome, lastBackup, onExport, onImport }) => {
+            const daysSinceBackup = lastBackup ? Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 999;
+            const backupNeeded = daysSinceBackup >= 7;
+
+            return (
+                <header className="bg-white border-b sticky top-0 z-50">
+                    <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+                        <div className="flex items-center cursor-pointer gap-2" onClick={goHome}>
+                            <div className="bg-falcon-600 text-white p-2 rounded-lg"><Icons.Feather /></div>
+                            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Flipside</h1>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                            {backupNeeded && (
+                                <span className="text-orange-500 text-xs font-bold animate-pulse mr-2 hidden sm:block">
+                                    <i className="fas fa-exclamation-triangle"></i> BACKUP RECOMMENDED
+                                </span>
+                            )}
+                            <button onClick={onImport} className="text-gray-500 hover:text-falcon-600 p-2" title="Import JSON"><Icons.Upload /></button>
+                            <button onClick={onExport} className="text-gray-500 hover:text-falcon-600 p-2" title="Export Backup"><Icons.Download /></button>
+                        </div>
+                    </div>
+                </header>
+            );
+        };
+
+        const Dashboard = ({ decks, onCreateDeck, onEditDeck, onStudyDeck, onDeleteDeck }) => (
+            <div className="max-w-5xl mx-auto px-4 py-8">
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800">My Library</h2>
+                    <button onClick={onCreateDeck} className="bg-falcon-600 hover:bg-falcon-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition flex items-center gap-2 font-bold">
+                        <Icons.Plus /> Create New
+                    </button>
+                </div>
+
+                {decks.length === 0 ? (
+                    <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-gray-200">
+                        <div className="text-gray-200 text-7xl mb-6"><Icons.Brain /></div>
+                        <p className="text-gray-500 text-lg">Your library is empty. Let's create your first deck!</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {decks.map(deck => (
+                            <div key={deck.id} className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all border border-gray-100 p-6 flex flex-col justify-between h-52 group relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-1.5 h-full bg-falcon-500"></div>
+                                <div>
+                                    <h3 className="text-xl font-black text-gray-800 mb-1 truncate">{deck.title}</h3>
+                                    <p className="text-gray-400 text-sm font-bold uppercase tracking-widest">{deck.cards.length} Cards</p>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <div className="flex gap-1">
+                                        <button onClick={() => onEditDeck(deck.id)} className="text-gray-400 hover:text-falcon-600 p-2 rounded-lg hover:bg-falcon-50 transition"><Icons.Edit /></button>
+                                        <button onClick={() => onDeleteDeck(deck.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition"><Icons.Trash /></button>
+                                    </div>
+                                    <button onClick={() => onStudyDeck(deck.id)} className="bg-falcon-50 text-falcon-600 hover:bg-falcon-600 hover:text-white px-5 py-2 rounded-xl font-bold transition flex items-center gap-2">
+                                        <Icons.Play /> Study
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+
+        const Latex = ({ children }) => {
+            const containerRef = useRef(null);
+            useEffect(() => {
+                if (!containerRef.current || !window.renderMathInElement) return;
+                // Render mixed content (text + math)
+                containerRef.current.innerText = children;
+                try {
+                    renderMathInElement(containerRef.current, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false}
+                        ],
+                        throwOnError: false
+                    });
+                } catch(e) { console.error(e); }
+            }, [children]);
+            return <span ref={containerRef} className="latex-content" />;
+        };
+
+        const SymbolToolbar = ({ onInsert }) => {
+            const tabs = ['Accents', 'Math', 'Chem', 'Emoji'];
+            const [activeTab, setActiveTab] = useState('Accents');
+            
+            const groups = {
+                'Accents': ['á','é','í','ó','ú','ñ','ü','ç','¿','¡', 'ä', 'ö', 'ß'],
+                'Math': [
+                    { label: 'x²', val: '$x^{2}$' },
+                    { label: '√', val: '$\\sqrt{}$' },
+                    { label: 'frac', val: '$\\frac{a}{b}$' },
+                    { label: 'π', val: '$\\pi$' },
+                    { label: 'θ', val: '$\\theta$' },
+                    { label: '→', val: '$\\rightarrow$' },
+                    { label: '∞', val: '$\\infty$' },
+                    { label: '∫', val: '$\\int$' },
+                    { label: '∑', val: '$\\sum$' }
+                ],
+                'Chem': [
+                    { label: '→', val: '$\\rightarrow$' },
+                    { label: '⇌', val: '$\\rightleftharpoons$' },
+                    { label: 'Δ (Heat)', val: '$\\xrightarrow{\\Delta}$' },
+                    { label: 'e⁻', val: '$e^{-}$' },
+                    { label: '(s)', val: '$\\text{(s)}$' },
+                    { label: '(l)', val: '$\\text{(l)}$' },
+                    { label: '(g)', val: '$\\text{(g)}$' },
+                    { label: '(aq)', val: '$\\text{(aq)}$' },
+                    { label: 'H₂O', val: '$\\text{H}_{2}\\text{O}$' },
+                    { label: 'CO₂', val: '$\\text{CO}_{2}$' },
+                    { label: 'O₂', val: '$\\text{O}_{2}$' },
+                    { label: 'H⁺', val: '$\\text{H}^{+}$' },
+                    { label: 'OH⁻', val: '$\\text{OH}^{-}$' },
+                    { label: 'Glucose', val: '$\\text{C}_{6}\\text{H}_{12}\\text{O}_{6}$' },
+                    { label: 'Sub', val: '$\\text{X}_{2}$' },
+                    { label: 'Sup', val: '$\\text{X}^{2}$' }
+                ]
+            };
+
+            return (
+                <div className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-50 flex flex-col transition-all">
+                    <div className="flex gap-1 p-2 bg-gray-50 overflow-x-auto border-b border-gray-100">
+                        {tabs.map(t => (
+                            <button 
+                                key={t} onClick={() => setActiveTab(t)}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition ${activeTab === t ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-200'}`}
+                            >
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {activeTab === 'Emoji' ? (
+                        <div className="h-64 w-full overflow-hidden animate-fade-in">
+                            <EmojiPickerWrapper onEmojiSelect={onInsert} />
+                        </div>
+                    ) : (
+                        <div className="p-2 flex gap-2 overflow-x-auto items-center h-14">
+                            {groups[activeTab].map((item, i) => {
+                                const val = typeof item === 'string' ? item : item.val;
+                                const label = typeof item === 'string' ? item : item.label;
+                                return (
+                                    <button 
+                                        key={i} onClick={() => onInsert(val)}
+                                        className="bg-white hover:bg-falcon-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 shadow-sm whitespace-nowrap min-w-[2.5rem]"
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const DeckEditor = ({ deck, onSave, onCancel }) => {
+            const [title, setTitle] = useState(deck ? deck.title : 'New Collection');
+            const [cards, setCards] = useState(deck ? [...deck.cards] : [{ id: generateId(), term: '', definition: '', strength: 0 }]);
+            const [activeField, setActiveField] = useState(null); // {id, field}
+            
+            // --- Helper States ---
+            const [showImport, setShowImport] = useState(false);
+            const [importText, setImportText] = useState('');
+
+            const addCard = () => setCards([...cards, { id: generateId(), term: '', definition: '', strength: 0 }]);
+            const removeCard = (id) => setCards(cards.filter(c => c.id !== id));
+            const updateCard = (id, field, val) => setCards(cards.map(c => c.id === id ? { ...c, [field]: val } : c));
+
+            const handleInsert = (text) => {
+                if (activeField) {
+                    const card = cards.find(c => c.id === activeField.id);
+                    if (card) {
+                        const oldVal = card[activeField.field] || '';
+                        updateCard(activeField.id, activeField.field, oldVal + text);
+                    }
+                } else {
+                    alert("Click inside a text box first to insert a symbol.");
+                }
+            };
+
+            const handleImport = () => {
+                const lines = importText.split('\n');
+                const newCards = lines.filter(l => l.trim()).map(line => {
+                    let parts = line.split('\t');
+                    if (parts.length < 2) parts = line.split(',');
+                    return parts.length >= 2 ? { id: generateId(), term: parts[0].trim(), definition: parts.slice(1).join(',').trim(), strength: 0 } : null;
+                }).filter(Boolean);
+                setCards([...cards, ...newCards]);
+                setShowImport(false);
+                setImportText('');
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto min-h-screen pb-32">
+                    {/* Header */}
+                    <div className="bg-white border-b px-4 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <button onClick={onCancel} className="text-gray-400 hover:text-gray-800"><Icons.ArrowLeft /></button>
+                            <span className="font-black text-lg text-gray-800">{deck ? 'Edit' : 'Create'}</span>
+                        </div>
+                        <div className="flex gap-2">
+                             <button onClick={() => setShowImport(!showImport)} className={`p-2 rounded-lg text-lg transition ${showImport ? 'bg-falcon-100 text-falcon-600' : 'text-gray-400 hover:bg-gray-100'}`} title="Import">
+                                <Icons.Upload />
+                            </button>
+                            <button onClick={() => onSave({id: deck?.id || generateId(), title, cards})} className="bg-falcon-600 hover:bg-falcon-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition ml-2">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Toolbar */}
+                    <div className="sticky top-[73px] z-30 shadow-md">
+                        <SymbolToolbar onInsert={handleInsert} />
+                    </div>
+
+                    <div className="p-4 space-y-6">
+                        {/* Title Input */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Collection Title</label>
+                            <input 
+                                type="text" value={title} onChange={e => setTitle(e.target.value)}
+                                className="w-full text-2xl font-bold border-b-2 border-gray-100 focus:border-falcon-500 outline-none pb-2 transition"
+                                placeholder="e.g., Chemistry 101"
+                            />
+                        </div>
+
+                        {/* Import Drawer */}
+                        {showImport && (
+                            <div className="bg-gray-800 p-6 rounded-2xl text-white shadow-xl animate-bounce-in">
+                                <p className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-widest">CSV Data (Term, Definition)</p>
+                                <textarea 
+                                    className="w-full h-32 bg-gray-700 rounded-xl p-4 text-sm font-mono outline-none focus:ring-2 focus:ring-falcon-400"
+                                    value={importText} onChange={e => setImportText(e.target.value)}
+                                    placeholder="Apple, Manzana&#10;Orange, Naranja"
+                                ></textarea>
+                                <button onClick={handleImport} className="mt-4 bg-falcon-500 w-full py-2 rounded-lg text-sm font-bold hover:bg-falcon-400 transition">Import Cards</button>
+                            </div>
+                        )}
+
+                        {/* Cards List */}
+                        <div className="space-y-4">
+                            {cards.map((card, idx) => (
+                                <div key={card.id} className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100 group transition-all hover:shadow-md relative">
+                                    <div className="absolute top-4 left-4 text-gray-200 font-black text-2xl select-none">{idx + 1}</div>
+                                    <button onClick={() => removeCard(card.id)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition"><Icons.Trash /></button>
+                                    
+                                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Term Side */}
+                                        <div className={`p-4 rounded-xl border transition flex flex-col gap-3 ${activeField?.id === card.id && activeField?.field === 'term' ? 'border-falcon-300 bg-falcon-50' : 'border-gray-100 bg-gray-50'}`}>
+                                            <div className="flex justify-between items-end">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Term</label>
+                                                {card.term && <div className="text-xs text-falcon-600 bg-white px-2 py-0.5 rounded shadow-sm opacity-80"><Latex>{card.term}</Latex></div>}
+                                            </div>
+                                            <textarea 
+                                                rows="2"
+                                                className="w-full bg-transparent border-none outline-none font-bold text-gray-800 resize-none"
+                                                value={card.term} onChange={e => updateCard(card.id, 'term', e.target.value)}
+                                                onFocus={() => setActiveField({id: card.id, field: 'term'})}
+                                                placeholder="Enter term..."
+                                            />
+                                        </div>
+
+                                        {/* Definition Side */}
+                                        <div className={`p-4 rounded-xl border transition flex flex-col gap-3 ${activeField?.id === card.id && activeField?.field === 'definition' ? 'border-falcon-300 bg-falcon-50' : 'border-gray-100 bg-gray-50'}`}>
+                                            <div className="flex justify-between items-end">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Definition</label>
+                                                {card.definition && <div className="text-xs text-falcon-600 bg-white px-2 py-0.5 rounded shadow-sm opacity-80"><Latex>{card.definition}</Latex></div>}
+                                            </div>
+                                            <textarea 
+                                                rows="2"
+                                                className="w-full bg-transparent border-none outline-none font-bold text-gray-800 resize-none"
+                                                value={card.definition} onChange={e => updateCard(card.id, 'definition', e.target.value)}
+                                                onFocus={() => setActiveField({id: card.id, field: 'definition'})}
+                                                placeholder="Enter definition..."
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button onClick={addCard} className="w-full py-6 border-4 border-dashed border-gray-200 rounded-3xl text-gray-300 font-black text-xl hover:border-falcon-400 hover:text-falcon-500 hover:bg-white transition-all">
+                            <Icons.Plus /> ADD CARD
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const StudySetup = ({ deck, onStart }) => {
+            const [mode, setMode] = useState('flashcards');
+            const [order, setOrder] = useState('random');
+
+            return (
+                <div className="max-w-2xl mx-auto px-4 py-16">
+                    <h2 className="text-4xl font-black text-gray-900 mb-2">{deck.title}</h2>
+                    <p className="text-gray-500 font-bold mb-10 tracking-wide uppercase text-sm">{deck.cards.length} Cards in this deck</p>
+
+                    <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-gray-100">
+                        <h3 className="font-black text-gray-800 text-xl mb-6">Choose Practice Mode</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+                            {[ 
+                                { id: 'flashcards', icon: <Icons.Rotate />, label: 'Flashcards' },
+                                { id: 'type_def', icon: <Icons.Edit />, label: 'Type Def' },
+                                { id: 'type_term', icon: <Icons.Edit />, label: 'Type Term' },
+                            ].map(m => (
+                                <button 
+                                    key={m.id} onClick={() => setMode(m.id)}
+                                    className={`p-6 rounded-3xl border-4 flex flex-col items-center gap-3 transition-all ${mode === m.id ? 'border-falcon-500 bg-falcon-50 text-falcon-700 scale-105 shadow-md' : 'border-gray-50 hover:border-falcon-100 text-gray-400'}`}
+                                >
+                                    <span className="text-3xl">{m.icon}</span>
+                                    <span className="font-black text-xs uppercase tracking-widest">{m.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <h3 className="font-black text-gray-800 text-xl mb-4">Order</h3>
+                        <div className="flex gap-2 mb-10">
+                            {['random', 'fixed', 'smart'].map(o => (
+                                <button key={o} onClick={() => setOrder(o)} className={`px-6 py-2 rounded-full text-sm font-black transition-all ${order === o ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                    {o.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button onClick={() => onStart(mode, order)} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white text-xl font-black py-5 rounded-[2rem] shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 flex justify-center items-center gap-3">
+                            START SESSION <Icons.ArrowRight />
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const StudySession = ({ deck, mode, order, onUpdateCard, onFinish, onExit }) => {
+            const [queue, setQueue] = useState([]);
+            const [idx, setIdx] = useState(0);
+            const [flipped, setFlipped] = useState(false);
+            const [input, setInput] = useState('');
+            const [feedback, setFeedback] = useState(null);
+            
+            // Stats Tracking
+            const startTime = useRef(Date.now());
+            const [stats, setStats] = useState({ correct: 0, incorrect: 0, known: 0 });
+
+            useEffect(() => {
+                let cards = [...deck.cards];
+                if (order === 'random') cards = shuffleArray(cards);
+                else if (order === 'smart') cards.sort((a, b) => (a.strength || 0) - (b.strength || 0));
+                setQueue(cards);
+                startTime.current = Date.now(); // Reset start time on load
+            }, [deck, order]);
+
+            const finishSession = () => {
+                const duration = (Date.now() - startTime.current) / 1000;
+                onFinish({
+                    deckId: deck.id,
+                    deckTitle: deck.title,
+                    mode,
+                    duration,
+                    totalCards: queue.length,
+                    ...stats
+                });
+            };
+
+            if (queue.length === 0) return <div className="p-20 text-center font-black text-gray-200 text-4xl">LOADING...</div>;
+
+            const card = queue[idx];
+            const progress = ((idx + 1) / queue.length) * 100;
+
+            const next = () => {
+                if (idx < queue.length - 1) {
+                    setIdx(idx + 1);
+                    setFlipped(false);
+                    setInput('');
+                    setFeedback(null);
+                } else {
+                    finishSession();
+                }
+            };
+
+            const markGood = () => {
+                setStats(s => ({ ...s, known: s.known + 1 }));
+                onUpdateCard(card.id, { strength: (card.strength || 0) + 1 });
+                next();
+            };
+
+            const check = (e) => {
+                e.preventDefault();
+                const target = mode === 'type_def' ? card.definition : card.term;
+                const ok = input.trim().toLowerCase() === target.trim().toLowerCase();
+                setFeedback(ok ? 'correct' : 'incorrect');
+                
+                if (ok) {
+                    setStats(s => ({ ...s, correct: s.correct + 1 }));
+                    onUpdateCard(card.id, { strength: (card.strength || 0) + 1 });
+                } else {
+                    setStats(s => ({ ...s, incorrect: s.incorrect + 1 }));
+                }
+            };
+
+            return (
+                <div className="h-screen flex flex-col bg-gray-50">
+                    <div className="p-4 flex justify-between items-center text-gray-400 font-black">
+                        <button onClick={() => { finishSession(); onExit(); }} className="hover:text-gray-900 flex items-center gap-2"><Icons.Times /> EXIT</button>
+                        <div className="text-sm tracking-widest">{idx + 1} / {queue.length}</div>
+                        <div className="w-10"></div>
+                    </div>
+
+                    <div className="w-full px-4 mb-10">
+                        <div className="h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full bg-falcon-500 transition-all duration-500" style={{width: `${progress}%`}}></div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col items-center justify-center p-4">
+                        {mode === 'flashcards' ? (
+                            <div className={`w-full max-w-2xl aspect-[1.6/1] cursor-pointer card-flip ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(!flipped)}>
+                                <div className="card-inner">
+                                    <div className="card-front p-10 flex-col">
+                                        <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] mb-4">TERM</span>
+                                        <h2 className="text-4xl md:text-5xl font-black text-center text-gray-800">
+                                            <Latex>{card.term}</Latex>
+                                        </h2>
+                                        <div className="absolute bottom-6 text-gray-300 text-xs font-bold animate-pulse">TAP TO FLIP</div>
+                                    </div>
+                                    <div className="card-back p-10 flex-col">
+                                        <span className="text-[10px] font-black text-falcon-400 uppercase tracking-[0.3em] mb-4">DEFINITION</span>
+                                        <h2 className="text-3xl md:text-4xl font-bold text-center text-falcon-900 leading-tight">
+                                            <Latex>{card.definition}</Latex>
+                                        </h2>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-full max-w-2xl bg-white p-12 rounded-[3rem] shadow-2xl border border-gray-100 flex flex-col items-center animate-bounce-in">
+                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] mb-4">{mode === 'type_def' ? 'TERM' : 'DEFINITION'}</span>
+                                <h2 className="text-4xl font-black text-center text-gray-800 mb-12">
+                                    <Latex>{mode === 'type_def' ? card.term : card.definition}</Latex>
+                                </h2>
+
+                                {!feedback ? (
+                                    <form onSubmit={check} className="w-full flex flex-col items-center">
+                                        <input 
+                                            autoFocus className="w-full bg-gray-50 border-4 border-gray-100 rounded-3xl p-6 text-2xl font-bold text-center outline-none focus:border-falcon-400 focus:bg-white transition-all"
+                                            placeholder="Type your answer..." value={input} onChange={e => setInput(e.target.value)}
+                                        />
+                                        <button type="submit" className="mt-6 bg-falcon-600 hover:bg-falcon-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-lg transition transform hover:scale-105">
+                                            CHECK ANSWER
+                                        </button>
+                                    </form>
+                                ) : (
+                                    <div className="text-center w-full animate-bounce-in">
+                                        <div className={`text-6xl mb-6 ${feedback === 'correct' ? 'text-green-500' : 'text-red-500'}`}>
+                                            {feedback === 'correct' ? <Icons.Check /> : <Icons.Times />}
+                                        </div>
+                                        <h3 className={`text-2xl font-black mb-6 ${feedback === 'correct' ? 'text-green-600' : 'text-red-600'}`}>
+                                            {feedback === 'correct' ? 'EXCELLENT!' : 'NOT QUITE...'}
+                                        </h3>
+                                        <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Correct Answer</p>
+                                            <p className="text-xl font-bold text-gray-800">
+                                                <Latex>{mode === 'type_def' ? card.definition : card.term}</Latex>
+                                            </p>
+                                        </div>
+                                        <button onClick={next} className="bg-gray-800 text-white px-10 py-4 rounded-2xl font-black text-lg hover:bg-gray-700 transition">CONTINUE</button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {mode === 'flashcards' && (
+                        <div className="p-8 flex justify-center gap-4">
+                            <button onClick={() => idx > 0 && setIdx(idx-1)} className="w-16 h-16 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-800 transition"><Icons.ArrowLeft /></button>
+                            <button onClick={markGood} className="bg-white border-2 border-green-500 text-green-600 px-8 py-4 rounded-full font-black text-lg shadow-lg hover:bg-green-50 transition transform hover:scale-105 uppercase tracking-widest">Got it! ✨</button>
+                            <button onClick={next} className="w-16 h-16 rounded-full bg-gray-800 shadow-lg flex items-center justify-center text-white hover:bg-gray-700 transition"><Icons.ArrowRight /></button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const StatsView = ({ sessions, onClear }) => {
+            const totalSessions = sessions.length;
+            const totalTime = sessions.reduce((acc, s) => acc + (s.duration || 0), 0);
+            const totalCards = sessions.reduce((acc, s) => acc + (s.totalCards || 0), 0);
+            
+            const formatTime = (secs) => {
+                if (!secs) return '0m';
+                const m = Math.floor(secs / 60);
+                const s = Math.floor(secs % 60);
+                return `${m}m ${s}s`;
+            };
+
+            const copyReport = () => {
+                const report = sessions.map(s => 
+                    `${new Date(s.date).toLocaleDateString()} - ${s.deckTitle} (${s.mode})\nTime: ${formatTime(s.duration)} | Cards: ${s.totalCards} | Score: ${s.correct || 0}/${s.totalCards}`
+                ).join('\n\n');
+                navigator.clipboard.writeText("Flipside Activity Report\n\n" + report);
+                alert("Report copied to clipboard!");
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto px-4 py-8">
+                    <div className="flex justify-between items-center mb-8">
+                        <h2 className="text-3xl font-black text-gray-900">Activity Stats</h2>
+                        <div className="flex gap-2">
+                            <button onClick={copyReport} className="bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-lg font-bold hover:bg-gray-50 flex items-center gap-2">
+                                <Icons.Download /> Copy Report
+                            </button>
+                            <button onClick={onClear} className="bg-red-50 text-red-500 px-4 py-2 rounded-lg font-bold hover:bg-red-100 flex items-center gap-2">
+                                <Icons.Trash /> Clear History
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <div className="text-gray-400 text-xs font-black uppercase tracking-widest mb-1">Total Sessions</div>
+                            <div className="text-4xl font-black text-gray-800">{totalSessions}</div>
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <div className="text-gray-400 text-xs font-black uppercase tracking-widest mb-1">Total Time</div>
+                            <div className="text-4xl font-black text-gray-800">{formatTime(totalTime)}</div>
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <div className="text-gray-400 text-xs font-black uppercase tracking-widest mb-1">Cards Studied</div>
+                            <div className="text-4xl font-black text-gray-800">{totalCards}</div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                                <tr>
+                                    <th className="p-4 text-xs font-black text-gray-400 uppercase tracking-widest">Date</th>
+                                    <th className="p-4 text-xs font-black text-gray-400 uppercase tracking-widest">Deck</th>
+                                    <th className="p-4 text-xs font-black text-gray-400 uppercase tracking-widest">Mode</th>
+                                    <th className="p-4 text-xs font-black text-gray-400 uppercase tracking-widest">Stats</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {sessions.slice().reverse().map(s => (
+                                    <tr key={s.id} className="hover:bg-gray-50 transition">
+                                        <td className="p-4 text-sm font-bold text-gray-600">{new Date(s.date).toLocaleDateString()}</td>
+                                        <td className="p-4 text-sm font-bold text-gray-800">{s.deckTitle}</td>
+                                        <td className="p-4 text-sm font-medium text-gray-500 capitalize">{s.mode.replace('_', ' ')}</td>
+                                        <td className="p-4 text-sm font-bold text-falcon-600">
+                                            {s.mode === 'flashcards' 
+                                                ? `${s.known || 0} known` 
+                                                : `${Math.round(((s.correct || 0) / s.totalCards) * 100)}% (${s.correct}/${s.totalCards})`
+                                            }
+                                            <div className="text-xs text-gray-400 font-normal mt-1">{formatTime(s.duration)}</div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {sessions.length === 0 && (
+                                    <tr>
+                                        <td colSpan="4" className="p-8 text-center text-gray-400 font-bold">No activity recorded yet.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+
+        const App = () => {
+            const [view, setView] = useState('dashboard');
+            const [decks, setDecks] = useState([]);
+            const [sessions, setSessions] = useState([]); // Activity Log
+            const [activeDeckId, setActiveDeckId] = useState(null);
+            const [studyCfg, setStudyCfg] = useState(null);
+            const [lastBackup, setLastBackup] = useState(null);
+
+            useEffect(() => {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    setDecks(data.decks || []);
+                    setSessions(data.sessions || []);
+                    setLastBackup(data.lastBackup || null);
+                } else {
+                    setDecks([{
+                        id: 'welcome', title: 'Getting Started 🚀',
+                        cards: [
+                            { id: '1', term: 'Flipside', definition: 'The world\'s fastest flashcard app!', strength: 0 },
+                            { id: '2', term: 'How to use?', definition: 'Create decks, add cards with emojis, and practice daily.', strength: 0 }
+                        ]
+                    }]);
+                }
+            }, []);
+
+            useEffect(() => {
+                if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, lastBackup }));
+            }, [decks, sessions, lastBackup]);
+
+            const handleSave = (deck) => {
+                setDecks(activeDeckId ? decks.map(d => d.id === activeDeckId ? deck : d) : [...decks, deck]);
+                setView('dashboard');
+            };
+
+            const handleDelete = (id) => {
+                if (confirm("Delete this collection forever?")) setDecks(decks.filter(d => d.id !== id));
+            };
+
+            const handleExport = () => {
+                const blob = new Blob([JSON.stringify({ decks, sessions, lastBackup: new Date() }, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `falcon_backup_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                setLastBackup(new Date());
+            };
+
+            const handleImport = () => {
+                const inp = document.createElement('input');
+                inp.type = 'file'; inp.accept = 'application/json';
+                inp.onchange = e => {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        const data = JSON.parse(ev.target.result);
+                        if (data.decks) {
+                            setDecks(data.decks);
+                            setSessions(data.sessions || []);
+                            setLastBackup(data.lastBackup || new Date());
+                            alert("Success! Your library was restored.");
+                        }
+                    };
+                    reader.readAsText(e.target.files[0]);
+                };
+                inp.click();
+            };
+
+            const handleCardUpdate = (deckId, cardId, updates) => {
+                setDecks(decks.map(d => d.id === deckId ? { ...d, cards: d.cards.map(c => c.id === cardId ? {...c, ...updates} : c)} : d));
+            };
+
+            const handleSessionFinish = (report) => {
+                const newSession = {
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    ...report
+                };
+                setSessions([...sessions, newSession]);
+                setView('dashboard'); // Or 'stats' if preferred
+            };
+
+            const activeDeck = decks.find(d => d.id === activeDeckId);
+
+            if (view === 'study' && activeDeck) {
+                return <StudySession 
+                    deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order}
+                    onUpdateCard={(cid, up) => handleCardUpdate(activeDeck.id, cid, up)}
+                    onFinish={(report) => handleSessionFinish(report)} 
+                    onExit={() => setView('dashboard')}
+                />;
+            }
+
+            return (
+                <div className="min-h-screen">
+                    <Header goHome={() => setView('dashboard')} lastBackup={lastBackup} onExport={handleExport} onImport={handleImport} />
+                    
+                    {/* Sub-Header / Nav for Stats (Simple Implementation) */}
+                    <div className="bg-white border-b border-gray-100 py-2 px-4 flex justify-center">
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            <button onClick={() => setView('dashboard')} className={`px-6 py-1.5 rounded-md text-sm font-bold transition ${view === 'dashboard' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}>Library</button>
+                            <button onClick={() => setView('stats')} className={`px-6 py-1.5 rounded-md text-sm font-bold transition flex items-center gap-2 ${view === 'stats' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}><Icons.Chart /> Stats</button>
+                        </div>
+                    </div>
+
+                    {view === 'dashboard' && (
+                        <Dashboard 
+                            decks={decks} 
+                            onCreateDeck={() => { setActiveDeckId(null); setView('edit'); }}
+                            onEditDeck={id => { setActiveDeckId(id); setView('edit'); }}
+                            onDeleteDeck={handleDelete}
+                            onStudyDeck={id => { setActiveDeckId(id); setView('setup'); }}
+                        />
+                    )}
+
+                    {view === 'edit' && <DeckEditor deck={activeDeck} onSave={handleSave} onCancel={() => setView('dashboard')} />}
+
+                    {view === 'setup' && activeDeck && (
+                        <StudySetup deck={activeDeck} onStart={(mode, order) => { setStudyCfg({mode, order}); setView('study'); }} />
+                    )}
+
+                    {view === 'stats' && (
+                        <StatsView sessions={sessions} onClear={() => { if(confirm('Clear history?')) setSessions([]); }} />
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
