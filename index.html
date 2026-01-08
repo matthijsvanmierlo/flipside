@@ -348,15 +348,32 @@
             );
         };
 
-        const DeckEditor = ({ deck, onSave, onCancel }) => {
+        const DeckEditor = ({ deck, onUpdate, onClose }) => {
             const [title, setTitle] = useState(deck ? deck.title : 'New Collection');
             const [cards, setCards] = useState(deck ? [...deck.cards] : [{ id: generateId(), term: '', definition: '', strength: 0 }]);
             const [activeField, setActiveField] = useState(null); // {id, field}
             const [expandedField, setExpandedField] = useState(null); // {id, field} or null
+            const [isSaving, setIsSaving] = useState(false);
             
             // --- Helper States ---
             const [showImport, setShowImport] = useState(false);
             const [importText, setImportText] = useState('');
+
+            // Auto-save effect
+            useEffect(() => {
+                if (deck) {
+                    setIsSaving(true);
+                    const timer = setTimeout(() => {
+                        onUpdate({
+                            id: deck.id,
+                            title,
+                            cards
+                        });
+                        setIsSaving(false);
+                    }, 500); // Debounce save
+                    return () => clearTimeout(timer);
+                }
+            }, [title, cards]);
 
             const addCard = () => setCards([...cards, { id: generateId(), term: '', definition: '', strength: 0 }]);
             const removeCard = (id) => setCards(cards.filter(c => c.id !== id));
@@ -391,15 +408,17 @@
                     {/* Header */}
                     <div className="bg-white border-b px-4 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
                         <div className="flex items-center gap-4">
-                            <button onClick={onCancel} className="text-gray-400 hover:text-gray-800"><Icons.ArrowLeft /></button>
-                            <span className="font-black text-lg text-gray-800">{deck ? 'Edit' : 'Create'}</span>
+                            <span className="font-black text-lg text-gray-800">Edit Collection</span>
+                            <span className={`text-xs font-bold uppercase tracking-widest transition-opacity ${isSaving ? 'text-gray-400' : 'text-green-500'}`}>
+                                {isSaving ? 'Saving...' : 'Saved'}
+                            </span>
                         </div>
                         <div className="flex gap-2">
                              <button onClick={() => setShowImport(!showImport)} className={`p-2 rounded-lg text-lg transition ${showImport ? 'bg-falcon-100 text-falcon-600' : 'text-gray-400 hover:bg-gray-100'}`} title="Import">
                                 <Icons.Upload />
                             </button>
-                            <button onClick={() => onSave({id: deck?.id || generateId(), title, cards})} className="bg-falcon-600 hover:bg-falcon-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition ml-2">
-                                Save
+                            <button onClick={onClose} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-bold shadow-sm transition ml-2">
+                                Close
                             </button>
                         </div>
                     </div>
@@ -917,9 +936,21 @@
                 if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, lastBackup }));
             }, [decks, sessions, lastBackup]);
 
-            const handleSave = (deck) => {
-                setDecks(activeDeckId ? decks.map(d => d.id === activeDeckId ? deck : d) : [...decks, deck]);
-                setView('dashboard');
+            // New helper to create deck
+            const handleCreateDeck = () => {
+                const newId = generateId();
+                const newDeck = {
+                    id: newId,
+                    title: 'New Collection',
+                    cards: [{ id: generateId(), term: '', definition: '', strength: 0 }]
+                };
+                setDecks([...decks, newDeck]);
+                setActiveDeckId(newId);
+                setView('edit');
+            };
+
+            const handleUpdateDeck = (updatedDeck) => {
+                 setDecks(prevDecks => prevDecks.map(d => d.id === updatedDeck.id ? updatedDeck : d));
             };
 
             const handleDelete = (id) => {
@@ -1008,7 +1039,7 @@
                     {view === 'dashboard' && (
                         <Dashboard 
                             decks={decks} 
-                            onCreateDeck={() => { setActiveDeckId(null); setView('edit'); }}
+                            onCreateDeck={handleCreateDeck}
                             onEditDeck={id => { setActiveDeckId(id); setView('edit'); }}
                             onDeleteDeck={handleDelete}
                             onStudyDeck={id => { setActiveDeckId(id); setView('setup'); }}
@@ -1016,7 +1047,11 @@
                         />
                     )}
 
-                    {view === 'edit' && <DeckEditor deck={activeDeck} onSave={handleSave} onCancel={() => setView('dashboard')} />}
+                    {view === 'edit' && <DeckEditor
+                        deck={activeDeck}
+                        onUpdate={handleUpdateDeck}
+                        onClose={() => setView('dashboard')}
+                    />}
 
                     {view === 'setup' && activeDeck && (
                         <StudySetup deck={activeDeck} onStart={(mode, order) => { setStudyCfg({mode, order}); setView('study'); }} />
