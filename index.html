@@ -118,6 +118,7 @@
             Chart: () => <i className="fas fa-chart-bar"></i>,
             Share: () => <i className="fas fa-share-nodes"></i>,
             Expand: () => <i className="fas fa-expand"></i>,
+            Gear: () => <i className="fas fa-gear"></i>,
         };
 
         // --- Sub-Components ---
@@ -812,6 +813,47 @@
             );
         };
 
+        const ImportOptionModal = ({ onMerge, onReplace, onCancel }) => (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-bounce-in p-8 text-center">
+                    <div className="text-5xl text-falcon-500 mb-6"><Icons.Upload /></div>
+                    <h2 className="text-2xl font-black text-gray-800 mb-2">Import Data</h2>
+                    <p className="text-gray-500 font-medium mb-8">How would you like to import this backup?</p>
+
+                    <div className="space-y-3">
+                        <button onClick={onMerge} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white font-bold py-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                            <Icons.Plus /> ADD TO LIBRARY
+                        </button>
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Keep existing data and add new decks</p>
+
+                        <div className="h-4"></div>
+
+                        <button onClick={onReplace} className="w-full bg-red-50 hover:bg-red-100 text-red-500 font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 border border-red-100">
+                            <Icons.Rotate /> REPLACE LIBRARY
+                        </button>
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Delete current data and replace with backup</p>
+                    </div>
+
+                    <button onClick={onCancel} className="mt-8 text-gray-400 hover:text-gray-600 font-bold text-sm">Cancel</button>
+                </div>
+            </div>
+        );
+
+        const SettingsView = ({ onClearAll }) => (
+            <div className="max-w-2xl mx-auto px-4 py-8">
+                 <h2 className="text-3xl font-black text-gray-900 mb-8">Settings</h2>
+
+                 <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+                     <h3 className="text-xl font-bold text-gray-800 mb-4">Data Management</h3>
+                     <p className="text-gray-500 mb-6">Permanently delete all decks, cards, and study history. This action cannot be undone.</p>
+
+                     <button onClick={onClearAll} className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-black py-4 rounded-xl transition flex items-center justify-center gap-2 border border-red-200">
+                         <Icons.Trash /> CLEAR ALL DATA
+                     </button>
+                 </div>
+            </div>
+        );
+
         // --- Welcome Modal ---
 
         const WelcomeModal = ({ onClose, onImport }) => {
@@ -878,6 +920,7 @@
             const [studyCfg, setStudyCfg] = useState(null);
             const [lastBackup, setLastBackup] = useState(null);
             const [showWelcome, setShowWelcome] = useState(false);
+            const [pendingImport, setPendingImport] = useState(null);
 
             useEffect(() => {
                 // Check if visited before
@@ -985,17 +1028,70 @@
                 inp.onchange = e => {
                     const reader = new FileReader();
                     reader.onload = ev => {
-                        const data = JSON.parse(ev.target.result);
-                        if (data.decks) {
-                            setDecks(data.decks);
-                            setSessions(data.sessions || []);
-                            setLastBackup(data.lastBackup || new Date());
-                            alert("Success! Your library was restored.");
-                        }
+                        try {
+                            const data = JSON.parse(ev.target.result);
+                            if (data.decks) {
+                                setPendingImport(data);
+                            }
+                        } catch(e) { alert("Invalid backup file."); }
                     };
                     reader.readAsText(e.target.files[0]);
                 };
                 inp.click();
+            };
+
+            const processImport = (type) => {
+                if (!pendingImport) return;
+
+                if (type === 'replace') {
+                    setDecks(pendingImport.decks);
+                    setSessions(pendingImport.sessions || []);
+                    setLastBackup(pendingImport.lastBackup || new Date());
+                    alert("Library replaced successfully.");
+                } else {
+                    // Merge Strategy:
+                    // 1. Assign new IDs to all imported decks to avoid collisions (treating them as new copies)
+                    // 2. Assign new IDs to imported sessions and update their deck references
+
+                    const deckIdMap = {}; // oldId -> newId
+
+                    const newDecks = pendingImport.decks.map(d => {
+                        const newId = generateId();
+                        deckIdMap[d.id] = newId;
+                        return {
+                            ...d,
+                            id: newId,
+                            cards: d.cards.map(c => ({ ...c, id: generateId() })) // also regen card IDs for cleanness
+                        };
+                    });
+
+                    const newSessions = (pendingImport.sessions || []).map(s => {
+                        // If session belongs to a deck we just imported, update the reference.
+                        // Otherwise, keep it as is (though it might point to nothing if not imported).
+                        // Since we are "Adding", likely the user wants the history associated with these decks.
+                        const linkedDeckId = deckIdMap[s.deckId] || s.deckId;
+                        return {
+                            ...s,
+                            id: generateId(),
+                            deckId: linkedDeckId
+                        };
+                    });
+
+                    setDecks([...decks, ...newDecks]);
+                    setSessions([...sessions, ...newSessions]);
+                    alert(`Added ${newDecks.length} decks to library.`);
+                }
+                setPendingImport(null);
+            };
+
+            const handleClearAllData = () => {
+                if (confirm("WARNING: This will permanently delete ALL your decks and study history. Are you sure?")) {
+                    setDecks([]);
+                    setSessions([]);
+                    setLastBackup(null);
+                    setView('dashboard');
+                    alert("All data cleared.");
+                }
             };
 
             const handleCardUpdate = (deckId, cardId, updates) => {
@@ -1025,6 +1121,11 @@
 
             return (
                 <div className="min-h-screen">
+                    {pendingImport && <ImportOptionModal
+                        onMerge={() => processImport('merge')}
+                        onReplace={() => processImport('replace')}
+                        onCancel={() => setPendingImport(null)}
+                    />}
                     {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} onImport={() => { setShowWelcome(false); handleImport(); }} />}
                     <Header goHome={() => setView('dashboard')} lastBackup={lastBackup} onExport={handleExport} onImport={handleImport} />
                     
@@ -1033,6 +1134,7 @@
                         <div className="flex bg-gray-100 p-1 rounded-lg">
                             <button onClick={() => setView('dashboard')} className={`px-6 py-1.5 rounded-md text-sm font-bold transition ${view === 'dashboard' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}>Library</button>
                             <button onClick={() => setView('stats')} className={`px-6 py-1.5 rounded-md text-sm font-bold transition flex items-center gap-2 ${view === 'stats' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}><Icons.Chart /> Stats</button>
+                            <button onClick={() => setView('settings')} className={`px-6 py-1.5 rounded-md text-sm font-bold transition flex items-center gap-2 ${view === 'settings' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}><Icons.Gear /> Settings</button>
                         </div>
                     </div>
 
@@ -1059,6 +1161,10 @@
 
                     {view === 'stats' && (
                         <StatsView sessions={sessions} onClear={() => { if(confirm('Clear history?')) setSessions([]); }} />
+                    )}
+
+                    {view === 'settings' && (
+                        <SettingsView onClearAll={handleClearAllData} />
                     )}
                 </div>
             );
