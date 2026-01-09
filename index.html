@@ -545,6 +545,7 @@
         const StudySetup = ({ deck, onStart }) => {
             const [mode, setMode] = useState('flashcards');
             const [order, setOrder] = useState('random');
+            const [graded, setGraded] = useState(true);
 
             return (
                 <div className="max-w-2xl mx-auto px-4 py-16">
@@ -578,7 +579,29 @@
                             ))}
                         </div>
 
-                        <button onClick={() => onStart(mode, order)} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white text-xl font-black py-5 rounded-[2rem] shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 flex justify-center items-center gap-3">
+                        {mode !== 'flashcards' && (
+                            <div className="mb-10 animate-fade-in">
+                                <h3 className="font-black text-gray-800 text-xl mb-4">Grading Mode</h3>
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setGraded(true)} className={`px-6 py-2 rounded-full text-sm font-black transition-all ${graded ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                            GRADED
+                                        </button>
+                                        <button onClick={() => setGraded(false)} className={`px-6 py-2 rounded-full text-sm font-black transition-all ${!graded ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                            UNGRADED (PRACTICE)
+                                        </button>
+                                    </div>
+                                    {!graded && (
+                                        <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm font-medium flex gap-3 items-start animate-fade-in">
+                                            <i className="fas fa-info-circle mt-1"></i>
+                                            <p>Recommended for Math & Chemistry. Answers are shown but not marked as "Correct" or "Wrong" (useful for complex notation).</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <button onClick={() => onStart(mode, order, graded)} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white text-xl font-black py-5 rounded-[2rem] shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 flex justify-center items-center gap-3">
                             START SESSION <Icons.ArrowRight />
                         </button>
                     </div>
@@ -586,7 +609,7 @@
             );
         };
 
-        const StudySession = ({ deck, mode, order, onUpdateCard, onFinish, onExit }) => {
+        const StudySession = ({ deck, mode, order, graded = true, onUpdateCard, onFinish, onExit }) => {
             const [queue, setQueue] = useState([]);
             const [idx, setIdx] = useState(0);
             const [flipped, setFlipped] = useState(false);
@@ -642,6 +665,12 @@
             const check = (e) => {
                 e.preventDefault();
                 const target = mode === 'type_def' ? card.definition : card.term;
+
+                if (!graded) {
+                    setFeedback('ungraded'); // Trigger UI switch to feedback view
+                    return;
+                }
+
                 const ok = input.trim().toLowerCase() === target.trim().toLowerCase();
                 setFeedback(ok ? 'correct' : 'incorrect');
                 
@@ -705,12 +734,26 @@
                                     </form>
                                 ) : (
                                     <div className="text-center w-full animate-bounce-in">
-                                        <div className={`text-6xl mb-6 ${feedback === 'correct' ? 'text-green-500' : 'text-red-500'}`}>
-                                            {feedback === 'correct' ? <Icons.Check /> : <Icons.Times />}
-                                        </div>
-                                        <h3 className={`text-2xl font-black mb-6 ${feedback === 'correct' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {feedback === 'correct' ? 'EXCELLENT!' : 'NOT QUITE...'}
-                                        </h3>
+                                        {feedback === 'ungraded' ? (
+                                            <>
+                                                <div className="text-6xl mb-6 text-falcon-500">
+                                                    <Icons.Brain />
+                                                </div>
+                                                <h3 className="text-2xl font-black mb-6 text-falcon-600">
+                                                    REVIEW ANSWER
+                                                </h3>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className={`text-6xl mb-6 ${feedback === 'correct' ? 'text-green-500' : 'text-red-500'}`}>
+                                                    {feedback === 'correct' ? <Icons.Check /> : <Icons.Times />}
+                                                </div>
+                                                <h3 className={`text-2xl font-black mb-6 ${feedback === 'correct' ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {feedback === 'correct' ? 'EXCELLENT!' : 'NOT QUITE...'}
+                                                </h3>
+                                            </>
+                                        )}
+
                                         <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100">
                                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Correct Answer</p>
                                             <p className="text-xl font-bold text-gray-800">
@@ -1120,7 +1163,7 @@
 
             if (view === 'study' && activeDeck) {
                 return <StudySession 
-                    deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order}
+                    deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order} graded={studyCfg.graded}
                     onUpdateCard={(cid, up) => handleCardUpdate(activeDeck.id, cid, up)}
                     onFinish={(report) => handleSessionFinish(report)} 
                     onExit={() => setView('dashboard')}
@@ -1164,7 +1207,7 @@
                     />}
 
                     {view === 'setup' && activeDeck && (
-                        <StudySetup deck={activeDeck} onStart={(mode, order) => { setStudyCfg({mode, order}); setView('study'); }} />
+                        <StudySetup deck={activeDeck} onStart={(mode, order, graded) => { setStudyCfg({mode, order, graded}); setView('study'); }} />
                     )}
 
                     {view === 'stats' && (
