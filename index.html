@@ -23,6 +23,7 @@
                     animation: {
                         'bounce-in': 'bounceIn 0.5s ease-out',
                         'fade-in': 'fadeIn 0.3s ease-out',
+                        'slide-up-fade': 'slideUpFade 0.4s ease-out',
                     },
                     keyframes: {
                         bounceIn: {
@@ -34,6 +35,10 @@
                         fadeIn: {
                             '0%': { opacity: '0' },
                             '100%': { opacity: '1' },
+                        },
+                        slideUpFade: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
                         }
                     }
                 }
@@ -85,7 +90,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useContext, createContext } = React;
 
         // --- Constants & Helpers ---
         const STORAGE_KEY = 'flipside_v1';
@@ -129,6 +134,100 @@
             Gear: () => <i className="fas fa-gear"></i>,
         };
 
+        // --- Dialog System ---
+
+        const DialogContext = createContext();
+        const useDialog = () => useContext(DialogContext);
+
+        const GlobalDialog = ({ isOpen, type, title, message, defaultValue, onConfirm, onCancel, confirmText, cancelText }) => {
+            const [inputVal, setInputVal] = useState(defaultValue || '');
+
+            useEffect(() => {
+                if (isOpen && type === 'prompt') setInputVal(defaultValue || '');
+            }, [isOpen, type, defaultValue]);
+
+            if (!isOpen) return null;
+
+            const handleConfirm = () => {
+                if (type === 'prompt') onConfirm(inputVal);
+                else onConfirm();
+            };
+
+            return (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 animate-bounce-in ring-1 ring-gray-900/5">
+                        {title && <h3 className="text-xl font-black text-gray-800 mb-2">{title}</h3>}
+                        {message && <p className="text-gray-500 font-medium mb-6 leading-relaxed">{message}</p>}
+
+                        {type === 'prompt' && (
+                            <input
+                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-800 outline-none focus:border-falcon-500 mb-6"
+                                value={inputVal}
+                                onChange={e => setInputVal(e.target.value)}
+                                autoFocus
+                                onKeyDown={e => e.key === 'Enter' && handleConfirm()}
+                            />
+                        )}
+
+                        <div className="flex gap-3 justify-end">
+                            {(type === 'confirm' || type === 'prompt') && (
+                                <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-gray-400 font-bold hover:bg-gray-100 transition">
+                                    {cancelText || 'Cancel'}
+                                </button>
+                            )}
+                            <button onClick={handleConfirm} className="bg-falcon-600 hover:bg-falcon-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg transition">
+                                {confirmText || 'OK'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const DialogProvider = ({ children }) => {
+            const [state, setState] = useState({ isOpen: false, type: 'alert', title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+
+            const close = () => setState(s => ({ ...s, isOpen: false }));
+
+            const show = (cfg) => {
+                setState({
+                    isOpen: true,
+                    type: cfg.type || 'alert',
+                    title: cfg.title || '',
+                    message: cfg.message || '',
+                    defaultValue: cfg.defaultValue,
+                    confirmText: cfg.confirmText,
+                    cancelText: cfg.cancelText,
+                    onConfirm: (val) => {
+                        close();
+                        if (cfg.onConfirm) cfg.onConfirm(val);
+                    },
+                    onCancel: () => {
+                        close();
+                        if (cfg.onCancel) cfg.onCancel();
+                    }
+                });
+            };
+
+            const alert = (message, title="Alert") => show({ type: 'alert', title, message });
+            const confirm = (message, onConfirm, title="Confirm") => show({ type: 'confirm', title, message, onConfirm });
+            const prompt = (message, defaultValue, onConfirm, title="Prompt") => show({ type: 'prompt', title, message, defaultValue, onConfirm });
+
+            return (
+                <DialogContext.Provider value={{ show, alert, confirm, prompt }}>
+                    {children}
+                    <GlobalDialog {...state} />
+                </DialogContext.Provider>
+            );
+        };
+
+        // --- Page Transition ---
+        const PageTransition = ({ children }) => (
+            <div className="animate-slide-up-fade w-full">
+                {children}
+            </div>
+        );
+
         // --- Sub-Components ---
 
         const EmojiPickerWrapper = ({ onEmojiSelect }) => {
@@ -143,16 +242,21 @@
             return <emoji-picker ref={ref} class="light shadow-none" style={{width: '100%', height: '300px'}}></emoji-picker>;
         };
 
-        const Header = ({ goHome, lastBackup, onExport, onImport }) => {
+        const Header = ({ appName, onRename, goHome, lastBackup, onExport, onImport }) => {
             const daysSinceBackup = lastBackup ? Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 999;
             const backupNeeded = daysSinceBackup >= 7;
 
             return (
                 <header className="bg-white border-b sticky top-0 z-50">
                     <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-                        <div className="flex items-center cursor-pointer gap-2" onClick={goHome}>
-                            <div className="bg-falcon-600 text-white p-2 rounded-lg"><Icons.Feather /></div>
-                            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Flipside</h1>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center cursor-pointer gap-2" onClick={goHome}>
+                                <div className="bg-falcon-600 text-white p-2 rounded-lg"><Icons.Feather /></div>
+                                <h1 className="text-xl font-bold text-gray-800 tracking-tight">{appName}</h1>
+                            </div>
+                            <button onClick={onRename} className="text-gray-400 hover:text-falcon-600 p-2 rounded-full hover:bg-falcon-50 transition" title="Rename Project">
+                                <Icons.Edit />
+                            </button>
                         </div>
                         <div className="flex gap-2 items-center">
                             {backupNeeded && (
@@ -358,6 +462,7 @@
         };
 
         const DeckEditor = ({ deck, onUpdate, onClose }) => {
+            const dialog = useDialog(); // Use dialog context
             const [title, setTitle] = useState(deck ? deck.title : 'New Collection');
             const [cards, setCards] = useState(deck ? [...deck.cards] : [{ id: generateId(), term: '', definition: '', strength: 0 }]);
             const [activeField, setActiveField] = useState(null); // {id, field}
@@ -396,7 +501,7 @@
                         updateCard(activeField.id, activeField.field, oldVal + text);
                     }
                 } else {
-                    alert("Click inside a text box first to insert a symbol.");
+                    dialog.alert("Click inside a text box first to insert a symbol.");
                 }
             };
 
@@ -779,6 +884,7 @@
         };
 
         const StatsView = ({ sessions, onClear }) => {
+            const dialog = useDialog();
             const totalSessions = sessions.length;
             const totalTime = sessions.reduce((acc, s) => acc + (s.duration || 0), 0);
             const totalCards = sessions.reduce((acc, s) => acc + (s.totalCards || 0), 0);
@@ -795,7 +901,7 @@
                     `${new Date(s.date).toLocaleDateString()} - ${s.deckTitle} (${s.mode})\nTime: ${formatTime(s.duration)} | Cards: ${s.totalCards} | Score: ${s.correct || 0}/${s.totalCards}`
                 ).join('\n\n');
                 navigator.clipboard.writeText("Flipside Activity Report\n\n" + report);
-                alert("Report copied to clipboard!");
+                dialog.alert("Report copied to clipboard!");
             };
 
             return (
@@ -961,12 +1067,14 @@
             );
         };
 
-        // --- Main App ---
+        // --- Main Content (Logic) ---
 
-        const App = () => {
+        const MainContent = () => {
+            const dialog = useDialog();
             const [view, setView] = useState('dashboard');
             const [decks, setDecks] = useState([]);
             const [sessions, setSessions] = useState([]); // Activity Log
+            const [appName, setAppName] = useState('Flipside');
             const [activeDeckId, setActiveDeckId] = useState(null);
             const [studyCfg, setStudyCfg] = useState(null);
             const [lastBackup, setLastBackup] = useState(null);
@@ -985,6 +1093,7 @@
                     const data = JSON.parse(raw);
                     setDecks(data.decks || []);
                     setSessions(data.sessions || []);
+                    setAppName(data.appName || 'Flipside');
                     setLastBackup(data.lastBackup || null);
                 } else {
                     setDecks([{
@@ -1013,7 +1122,7 @@
                                 });
                                 // Clean URL
                                 window.history.replaceState({}, document.title, window.location.pathname);
-                                alert(`Imported "${newDeck.title}" successfully!`);
+                                dialog.alert(`Imported "${newDeck.title}" successfully!`);
                                 // Optional: switch to setup view for the new deck
                                 setActiveDeckId(newDeck.id);
                                 setView('setup');
@@ -1021,14 +1130,14 @@
                         }
                     } catch (e) {
                         console.error("Import failed", e);
-                        alert("Failed to import deck. The link might be broken.");
+                        dialog.alert("Failed to import deck. The link might be broken.");
                     }
                 }
             }, []);
 
             useEffect(() => {
-                if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, lastBackup }));
-            }, [decks, sessions, lastBackup]);
+                if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, appName, lastBackup }));
+            }, [decks, sessions, appName, lastBackup]);
 
             // New helper to create deck
             const handleCreateDeck = () => {
@@ -1048,7 +1157,9 @@
             };
 
             const handleDelete = (id) => {
-                if (confirm("Delete this collection forever?")) setDecks(decks.filter(d => d.id !== id));
+                dialog.confirm("Delete this collection forever?", () => {
+                    setDecks(decks.filter(d => d.id !== id));
+                });
             };
 
             const handleShare = (deck) => {
@@ -1057,15 +1168,15 @@
                     const compressed = LZString.compressToEncodedURIComponent(json);
                     const url = `${window.location.origin}${window.location.pathname}?share=${compressed}`;
                     navigator.clipboard.writeText(url);
-                    alert("Link copied to clipboard! Share it with friends.");
+                    dialog.alert("Link copied to clipboard! Share it with friends.");
                 } catch (e) {
                     console.error("Share failed", e);
-                    alert("Could not generate share link.");
+                    dialog.alert("Could not generate share link.");
                 }
             };
 
             const handleExport = () => {
-                const blob = new Blob([JSON.stringify({ decks, sessions, lastBackup: new Date() }, null, 2)], { type: 'application/json' });
+                const blob = new Blob([JSON.stringify({ decks, sessions, appName, lastBackup: new Date() }, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url; a.download = `flipside_backup_${new Date().toISOString().slice(0,10)}.json`;
@@ -1084,7 +1195,7 @@
                             if (data.decks) {
                                 setPendingImport(data);
                             }
-                        } catch(e) { alert("Invalid backup file."); }
+                        } catch(e) { dialog.alert("Invalid backup file."); }
                     };
                     reader.readAsText(e.target.files[0]);
                 };
@@ -1097,13 +1208,11 @@
                 if (type === 'replace') {
                     setDecks(pendingImport.decks);
                     setSessions(pendingImport.sessions || []);
+                    if (pendingImport.appName) setAppName(pendingImport.appName);
                     setLastBackup(pendingImport.lastBackup || new Date());
-                    alert("Library replaced successfully.");
+                    dialog.alert("Library replaced successfully.");
                 } else {
-                    // Merge Strategy:
-                    // 1. Assign new IDs to all imported decks to avoid collisions (treating them as new copies)
-                    // 2. Assign new IDs to imported sessions and update their deck references
-
+                    // Merge Strategy
                     const deckIdMap = {}; // oldId -> newId
 
                     const newDecks = pendingImport.decks.map(d => {
@@ -1117,9 +1226,6 @@
                     });
 
                     const newSessions = (pendingImport.sessions || []).map(s => {
-                        // If session belongs to a deck we just imported, update the reference.
-                        // Otherwise, keep it as is (though it might point to nothing if not imported).
-                        // Since we are "Adding", likely the user wants the history associated with these decks.
                         const linkedDeckId = deckIdMap[s.deckId] || s.deckId;
                         return {
                             ...s,
@@ -1130,19 +1236,20 @@
 
                     setDecks([...decks, ...newDecks]);
                     setSessions([...sessions, ...newSessions]);
-                    alert(`Added ${newDecks.length} decks to library.`);
+                    dialog.alert(`Added ${newDecks.length} decks to library.`);
                 }
                 setPendingImport(null);
             };
 
             const handleClearAllData = () => {
-                if (confirm("WARNING: This will permanently delete ALL your decks and study history. Are you sure?")) {
+                dialog.confirm("WARNING: This will permanently delete ALL your decks and study history. Are you sure?", () => {
                     setDecks([]);
                     setSessions([]);
                     setLastBackup(null);
+                    setAppName('Flipside');
                     setView('dashboard');
-                    alert("All data cleared.");
-                }
+                    dialog.alert("All data cleared.");
+                });
             };
 
             const handleCardUpdate = (deckId, cardId, updates) => {
@@ -1159,15 +1266,27 @@
                 setView('dashboard'); // Or 'stats' if preferred
             };
 
+            const handleRenameProject = () => {
+                dialog.prompt("Enter new project name:", appName, (newName) => {
+                    if (newName && newName.trim()) {
+                        setAppName(newName.trim());
+                    }
+                }, "Rename Project");
+            };
+
             const activeDeck = decks.find(d => d.id === activeDeckId);
 
             if (view === 'study' && activeDeck) {
-                return <StudySession 
-                    deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order} graded={studyCfg.graded}
-                    onUpdateCard={(cid, up) => handleCardUpdate(activeDeck.id, cid, up)}
-                    onFinish={(report) => handleSessionFinish(report)} 
-                    onExit={() => setView('dashboard')}
-                />;
+                return (
+                    <PageTransition key="study">
+                        <StudySession
+                            deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order} graded={studyCfg.graded}
+                            onUpdateCard={(cid, up) => handleCardUpdate(activeDeck.id, cid, up)}
+                            onFinish={(report) => handleSessionFinish(report)}
+                            onExit={() => setView('dashboard')}
+                        />
+                    </PageTransition>
+                );
             }
 
             return (
@@ -1178,7 +1297,15 @@
                         onCancel={() => setPendingImport(null)}
                     />}
                     {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} onImport={() => { setShowWelcome(false); handleImport(); }} />}
-                    <Header goHome={() => setView('dashboard')} lastBackup={lastBackup} onExport={handleExport} onImport={handleImport} />
+
+                    <Header
+                        appName={appName}
+                        onRename={handleRenameProject}
+                        goHome={() => setView('dashboard')}
+                        lastBackup={lastBackup}
+                        onExport={handleExport}
+                        onImport={handleImport}
+                    />
                     
                     {/* Sub-Header / Nav for Stats (Simple Implementation) */}
                     <div className="bg-white border-b border-gray-100 py-2 px-4 flex justify-center">
@@ -1189,37 +1316,48 @@
                         </div>
                     </div>
 
-                    {view === 'dashboard' && (
-                        <Dashboard 
-                            decks={decks} 
-                            onCreateDeck={handleCreateDeck}
-                            onEditDeck={id => { setActiveDeckId(id); setView('edit'); }}
-                            onDeleteDeck={handleDelete}
-                            onStudyDeck={id => { setActiveDeckId(id); setView('setup'); }}
-                            onShareDeck={handleShare}
-                        />
-                    )}
+                    <PageTransition key={view}>
+                        {view === 'dashboard' && (
+                            <Dashboard
+                                decks={decks}
+                                onCreateDeck={handleCreateDeck}
+                                onEditDeck={id => { setActiveDeckId(id); setView('edit'); }}
+                                onDeleteDeck={handleDelete}
+                                onStudyDeck={id => { setActiveDeckId(id); setView('setup'); }}
+                                onShareDeck={handleShare}
+                            />
+                        )}
 
-                    {view === 'edit' && <DeckEditor
-                        deck={activeDeck}
-                        onUpdate={handleUpdateDeck}
-                        onClose={() => setView('dashboard')}
-                    />}
+                        {view === 'edit' && <DeckEditor
+                            deck={activeDeck}
+                            onUpdate={handleUpdateDeck}
+                            onClose={() => setView('dashboard')}
+                        />}
 
-                    {view === 'setup' && activeDeck && (
-                        <StudySetup deck={activeDeck} onStart={(mode, order, graded) => { setStudyCfg({mode, order, graded}); setView('study'); }} />
-                    )}
+                        {view === 'setup' && activeDeck && (
+                            <StudySetup deck={activeDeck} onStart={(mode, order, graded) => { setStudyCfg({mode, order, graded}); setView('study'); }} />
+                        )}
 
-                    {view === 'stats' && (
-                        <StatsView sessions={sessions} onClear={() => { if(confirm('Clear history?')) setSessions([]); }} />
-                    )}
+                        {view === 'stats' && (
+                            <StatsView
+                                sessions={sessions}
+                                onClear={() => { dialog.confirm('Clear history?', () => setSessions([])); }}
+                            />
+                        )}
 
-                    {view === 'settings' && (
-                        <SettingsView onClearAll={handleClearAllData} />
-                    )}
+                        {view === 'settings' && (
+                            <SettingsView onClearAll={handleClearAllData} />
+                        )}
+                    </PageTransition>
                 </div>
             );
         };
+
+        const App = () => (
+            <DialogProvider>
+                <MainContent />
+            </DialogProvider>
+        );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
