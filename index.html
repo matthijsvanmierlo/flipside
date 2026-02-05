@@ -651,6 +651,7 @@
             const [mode, setMode] = useState('flashcards');
             const [order, setOrder] = useState('random');
             const [graded, setGraded] = useState(true);
+            const [sideFirst, setSideFirst] = useState('term');
 
             return (
                 <div className="max-w-2xl mx-auto px-4 py-16">
@@ -684,6 +685,20 @@
                             ))}
                         </div>
 
+                        {mode === 'flashcards' && (
+                             <div className="mb-10 animate-fade-in">
+                                <h3 className="font-black text-gray-800 text-xl mb-4">Display Side</h3>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setSideFirst('term')} className={`px-6 py-2 rounded-full text-sm font-black transition-all ${sideFirst === 'term' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                        TERM FIRST
+                                    </button>
+                                    <button onClick={() => setSideFirst('definition')} className={`px-6 py-2 rounded-full text-sm font-black transition-all ${sideFirst === 'definition' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                        DEFINITION FIRST
+                                    </button>
+                                </div>
+                             </div>
+                        )}
+
                         {mode !== 'flashcards' && (
                             <div className="mb-10 animate-fade-in">
                                 <h3 className="font-black text-gray-800 text-xl mb-4">Grading Mode</h3>
@@ -706,7 +721,7 @@
                             </div>
                         )}
 
-                        <button onClick={() => onStart(mode, order, graded)} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white text-xl font-black py-5 rounded-[2rem] shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 flex justify-center items-center gap-3">
+                        <button onClick={() => onStart(mode, order, graded, sideFirst)} className="w-full bg-falcon-600 hover:bg-falcon-700 text-white text-xl font-black py-5 rounded-[2rem] shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 flex justify-center items-center gap-3">
                             START SESSION <Icons.ArrowRight />
                         </button>
                     </div>
@@ -714,7 +729,7 @@
             );
         };
 
-        const StudySession = ({ deck, mode, order, graded = true, onUpdateCard, onFinish, onExit }) => {
+        const StudySession = ({ deck, mode, order, graded = true, sideFirst = 'term', onUpdateCard, onFinish, onExit }) => {
             const [queue, setQueue] = useState([]);
             const [idx, setIdx] = useState(0);
             const [flipped, setFlipped] = useState(false);
@@ -806,16 +821,16 @@
                             <div className={`w-full max-w-2xl aspect-[1.6/1] cursor-pointer card-flip ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(!flipped)}>
                                 <div className="card-inner">
                                     <div className="card-front p-10 flex-col">
-                                        <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] mb-4">TERM</span>
+                                        <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] mb-4">{sideFirst === 'term' ? 'TERM' : 'DEFINITION'}</span>
                                         <h2 className="text-4xl md:text-5xl font-black text-center text-gray-800">
-                                            <Latex>{card.term}</Latex>
+                                            <Latex>{sideFirst === 'term' ? card.term : card.definition}</Latex>
                                         </h2>
                                         <div className="absolute bottom-6 text-gray-300 text-xs font-bold animate-pulse">TAP TO FLIP</div>
                                     </div>
                                     <div className="card-back p-10 flex-col">
-                                        <span className="text-[10px] font-black text-falcon-400 uppercase tracking-[0.3em] mb-4">DEFINITION</span>
+                                        <span className="text-[10px] font-black text-falcon-400 uppercase tracking-[0.3em] mb-4">{sideFirst === 'term' ? 'DEFINITION' : 'TERM'}</span>
                                         <h2 className="text-3xl md:text-4xl font-bold text-center text-falcon-900 leading-tight">
-                                            <Latex>{card.definition}</Latex>
+                                            <Latex>{sideFirst === 'term' ? card.definition : card.term}</Latex>
                                         </h2>
                                     </div>
                                 </div>
@@ -1280,7 +1295,7 @@
                 return (
                     <PageTransition key="study">
                         <StudySession
-                            deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order} graded={studyCfg.graded}
+                            deck={activeDeck} mode={studyCfg.mode} order={studyCfg.order} graded={studyCfg.graded} sideFirst={studyCfg.sideFirst}
                             onUpdateCard={(cid, up) => handleCardUpdate(activeDeck.id, cid, up)}
                             onFinish={(report) => handleSessionFinish(report)}
                             onExit={() => setView('dashboard')}
@@ -1335,7 +1350,7 @@
                         />}
 
                         {view === 'setup' && activeDeck && (
-                            <StudySetup deck={activeDeck} onStart={(mode, order, graded) => { setStudyCfg({mode, order, graded}); setView('study'); }} />
+                            <StudySetup deck={activeDeck} onStart={(mode, order, graded, sideFirst) => { setStudyCfg({mode, order, graded, sideFirst}); setView('study'); }} />
                         )}
 
                         {view === 'stats' && (
