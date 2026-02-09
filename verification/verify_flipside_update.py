@@ -13,26 +13,16 @@ def verify_flipside(page):
     # Click Get Started
     page.get_by_role("button", name="GET STARTED").click()
 
-    # 2. Rename Project
-    print("Renaming Project...")
-    # Find the edit icon in the header. It's a button with title "Rename Project"
-    page.get_by_title("Rename Project").click()
+    # 2. Verify Title and Absence of Rename Button
+    print("Verifying Title and Absence of Rename Button...")
+    # Verify Header title is "Flipside"
+    expect(page.locator("h1")).to_have_text("Flipside")
 
-    # Dialog should appear
-    # The dialog is a custom one, look for "Rename Project" title
-    page.wait_for_selector("text=Enter new project name:")
-    page.screenshot(path="verification/2_rename_dialog.png")
+    # Verify Rename Project button is NOT present
+    expect(page.get_by_title("Rename Project")).not_to_be_visible()
 
-    # Type new name
-    page.fill("input", "Jules Flashcards")
-
-    # Click OK
-    page.get_by_role("button", name="OK").click()
-
-    # Verify Header updated
-    expect(page.locator("h1")).to_have_text("Jules Flashcards")
-    print("Project renamed successfully.")
-    page.screenshot(path="verification/3_renamed.png")
+    print("Title verified and Rename Button absent.")
+    page.screenshot(path="verification/2_header_verified.png")
 
     # 3. Create New Deck (Test Transition)
     print("Creating new deck...")

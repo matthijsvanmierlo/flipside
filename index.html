@@ -242,7 +242,7 @@
             return <emoji-picker ref={ref} class="light shadow-none" style={{width: '100%', height: '300px'}}></emoji-picker>;
         };
 
-        const Header = ({ appName, onRename, goHome, lastBackup, onExport, onImport }) => {
+        const Header = ({ goHome, lastBackup, onExport, onImport }) => {
             const daysSinceBackup = lastBackup ? Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 999;
             const backupNeeded = daysSinceBackup >= 7;
 
@@ -252,11 +252,8 @@
                         <div className="flex items-center gap-2">
                             <div className="flex items-center cursor-pointer gap-2" onClick={goHome}>
                                 <div className="bg-falcon-600 text-white p-2 rounded-lg"><Icons.Feather /></div>
-                                <h1 className="text-xl font-bold text-gray-800 tracking-tight">{appName}</h1>
+                                <h1 className="text-xl font-bold text-gray-800 tracking-tight">Flipside</h1>
                             </div>
-                            <button onClick={onRename} className="text-gray-400 hover:text-falcon-600 p-2 rounded-full hover:bg-falcon-50 transition" title="Rename Project">
-                                <Icons.Edit />
-                            </button>
                         </div>
                         <div className="flex gap-2 items-center">
                             {backupNeeded && (
@@ -1089,7 +1086,6 @@
             const [view, setView] = useState('dashboard');
             const [decks, setDecks] = useState([]);
             const [sessions, setSessions] = useState([]); // Activity Log
-            const [appName, setAppName] = useState('Flipside');
             const [activeDeckId, setActiveDeckId] = useState(null);
             const [studyCfg, setStudyCfg] = useState(null);
             const [lastBackup, setLastBackup] = useState(null);
@@ -1108,7 +1104,6 @@
                     const data = JSON.parse(raw);
                     setDecks(data.decks || []);
                     setSessions(data.sessions || []);
-                    setAppName(data.appName || 'Flipside');
                     setLastBackup(data.lastBackup || null);
                 } else {
                     setDecks([{
@@ -1151,8 +1146,8 @@
             }, []);
 
             useEffect(() => {
-                if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, appName, lastBackup }));
-            }, [decks, sessions, appName, lastBackup]);
+                if (decks.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks, sessions, lastBackup }));
+            }, [decks, sessions, lastBackup]);
 
             // New helper to create deck
             const handleCreateDeck = () => {
@@ -1191,7 +1186,7 @@
             };
 
             const handleExport = () => {
-                const blob = new Blob([JSON.stringify({ decks, sessions, appName, lastBackup: new Date() }, null, 2)], { type: 'application/json' });
+                const blob = new Blob([JSON.stringify({ decks, sessions, lastBackup: new Date() }, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url; a.download = `flipside_backup_${new Date().toISOString().slice(0,10)}.json`;
@@ -1223,7 +1218,6 @@
                 if (type === 'replace') {
                     setDecks(pendingImport.decks);
                     setSessions(pendingImport.sessions || []);
-                    if (pendingImport.appName) setAppName(pendingImport.appName);
                     setLastBackup(pendingImport.lastBackup || new Date());
                     dialog.alert("Library replaced successfully.");
                 } else {
@@ -1281,14 +1275,6 @@
                 setView('dashboard'); // Or 'stats' if preferred
             };
 
-            const handleRenameProject = () => {
-                dialog.prompt("Enter new project name:", appName, (newName) => {
-                    if (newName && newName.trim()) {
-                        setAppName(newName.trim());
-                    }
-                }, "Rename Project");
-            };
-
             const activeDeck = decks.find(d => d.id === activeDeckId);
 
             if (view === 'study' && activeDeck) {
@@ -1314,8 +1300,6 @@
                     {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} onImport={() => { setShowWelcome(false); handleImport(); }} />}
 
                     <Header
-                        appName={appName}
-                        onRename={handleRenameProject}
                         goHome={() => setView('dashboard')}
                         lastBackup={lastBackup}
                         onExport={handleExport}
